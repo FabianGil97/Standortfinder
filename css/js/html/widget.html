@@ -1,1 +1,545 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EDEKA Nord Standort-Dashboard</title>
 
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+
+    <style>
+        /* Grundlegende Stile & Layout */
+        :root {
+            --edeka-yellow: #FFD500;
+            --edeka-blue: #0052A5;
+            --light-gray: #f4f4f4;
+            --medium-gray: #e0e0e0;
+            --dark-gray: #333;
+            --text-color: #555;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: Arial, Helvetica, sans-serif;
+            overflow: hidden; /* Verhindert Scrollen der gesamten Seite */
+            background: #fff;
+        }
+
+        .dashboard-container {
+            display: flex;
+            height: 100vh;
+            width: 100%;
+        }
+
+        /* Seitenleiste (Steuerungselemente & Ergebnisse) */
+        .sidebar {
+            width: 420px;
+            background-color: #fff;
+            padding: 20px;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            overflow-y: hidden;
+        }
+
+        .sidebar h1 {
+            color: var(--edeka-blue);
+            font-size: 24px;
+            margin-top: 0;
+            border-bottom: 2px solid var(--light-gray);
+            padding-bottom: 15px;
+        }
+
+        .subheadline {
+            margin-top: -6px;
+            margin-bottom: 18px;
+            color: var(--text-color);
+            font-size: 13px;
+            line-height: 1.35;
+        }
+
+        .control-group {
+            margin-bottom: 25px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: var(--dark-gray);
+        }
+
+        .search-wrapper {
+            display: flex;
+            gap: 10px;
+        }
+
+        #addressInput {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid var(--medium-gray);
+            border-radius: 4px;
+            font-size: 16px;
+        }
+
+        #searchButton {
+            padding: 10px 18px;
+            background-color: var(--edeka-yellow);
+            color: #111;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        #searchButton:hover {
+            filter: brightness(0.97);
+        }
+
+        #searchButton:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        #radiusValue {
+            font-weight: bold;
+            color: var(--edeka-blue);
+        }
+
+        #radiusSlider {
+            width: 100%;
+            cursor: pointer;
+        }
+
+        /* Custom Slider Styling */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: var(--edeka-yellow);
+            border: 3px solid #fff;
+            box-shadow: 0 0 5px rgba(0,0,0,0.2);
+            cursor: pointer;
+            margin-top: -8px; /* Vertikale Zentrierung */
+        }
+
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: var(--medium-gray);
+            border-radius: 2px;
+        }
+        /* Ergebnisliste */
+        .results-container {
+            flex-grow: 1; /* Nimmt den restlichen Platz in der Sidebar ein */
+            border-top: 2px solid var(--light-gray);
+            padding-top: 15px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden; /* Scrolling findet in #resultsItems statt */
+        }
+
+        .results-count {
+            padding: 10px 12px;
+            margin-bottom: 12px;
+            border: 1px solid var(--medium-gray);
+            border-radius: 4px;
+            background: rgba(255, 213, 0, 0.14);
+            color: var(--edeka-blue);
+            font-weight: bold;
+            font-size: 13px;
+        }
+
+        #resultsItems {
+            overflow-y: auto;
+            flex-grow: 1;
+        }
+
+        .result-item {
+            padding: 14px;
+            border: 1px solid var(--medium-gray);
+            border-radius: 4px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: background-color 0.2s, border-color 0.2s;
+        }
+
+        .result-item:hover {
+            background-color: var(--light-gray);
+            border-color: var(--edeka-blue);
+        }
+
+        .result-item .title {
+            font-weight: bold;
+            color: var(--dark-gray);
+        }
+
+        .result-item .address {
+            color: var(--text-color);
+            margin: 6px 0 4px;
+            font-size: 13px;
+        }
+
+        .result-item .meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 10px;
+            margin-top: 10px;
+            font-size: 13px;
+            color: var(--text-color);
+        }
+
+        .result-item .screens {
+            font-weight: bold;
+            color: var(--edeka-blue);
+        }
+
+        .result-item .distance {
+            font-weight: bold;
+            color: var(--edeka-blue);
+        }
+
+        #no-results-message {
+            color: var(--text-color);
+            padding: 20px;
+            text-align: center;
+            font-style: italic;
+        }
+
+        /* Kartenbereich */
+        .map-container {
+            flex-grow: 1;
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Leaflet Popup Styling */
+        .leaflet-popup-content-wrapper {
+            border-radius: 4px;
+        }
+
+        .leaflet-popup-content b {
+            color: var(--edeka-blue);
+        }
+
+        /* Mini Badge */
+        .badge {
+            display: inline-block;
+            font-size: 12px;
+            padding: 4px 8px;
+            border-radius: 999px;
+            background: rgba(0,82,165,0.08);
+            color: var(--edeka-blue);
+            font-weight: bold;
+            margin-left: 6px;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="dashboard-container">
+        <div class="sidebar">
+            <h1>EDEKA Nord Standort-Finder <span class="badge">v1</span></h1>
+            <div class="subheadline">
+                Adresse des potenziellen Kunden eingeben → passende <b>EDEKA Nord</b>-Filialen im Suchradius werden angezeigt.
+            </div>
+
+            <div class="control-group">
+                <label for="addressInput">Kundenadresse</label>
+                <div class="search-wrapper">
+                    <input type="text" id="addressInput" placeholder="z. B. Musterstraße 12, 20095 Hamburg" aria-label="Kundenadresse" />
+                    <button id="searchButton">Suchen</button>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label for="radiusSlider">Suchradius: <span id="radiusValue">40 km</span></label>
+                <input type="range" id="radiusSlider" min="1" max="100" value="40" />
+            </div>
+            <div class="results-container" id="resultsList">
+                <div id="resultsCount" class="results-count" style="display:none;"></div>
+                <p id="no-results-message">Bitte geben Sie eine Adresse ein, um passende EDEKA Nord Standorte zu finden.</p>
+                <div id="resultsItems"></div>
+            </div>
+        </div>
+
+        <div class="map-container">
+            <div id="map"></div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+    <script>
+        // EDEKA Nord Standortdaten direkt im Skript
+        const edekaStores = [{"id": "Loc_bqvfbezkkas", "name": "EDEKA Adler, Lübeck", "address": "Hansering 21-23, 23558 Lübeck, Germany", "zip": "23558", "city": "Lübeck", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.857143, "lng": 10.663967, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_CY9y9e9vzDD", "name": "EDEKA Alpen, Hohwacht", "address": "Seestraße 12A, 24321 Klamp, Germany", "zip": "24321", "city": "Klamp", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.324471, "lng": 10.661524, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_JJdz4D84y3M", "name": "EDEKA Alpen, Laboe", "address": "Bullbrücke 4, 24235 Laboe, Germany", "zip": "24235", "city": "Laboe", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.397462, "lng": 10.23275, "screensLandscape": 3, "screensPortrait": 2, "screensTotal": 5}, {"id": "Loc_U8Jdo3987Us", "name": "EDEKA Alpen, Schönberg", "address": "Bahnhofstraße 20, 24217 Wisch, Germany", "zip": "24217", "city": "Wisch", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.390705, "lng": 10.372811, "screensLandscape": 1, "screensPortrait": 2, "screensTotal": 3}, {"id": "Loc_cZHbBUP13V", "name": "EDEKA Altenburg-Caleffi, Dannenberg", "address": "Lüneburger Str. 44, 29451 Dannenberg (Elbe), Germany", "zip": "29451", "city": "Dannenberg (Elbe)", "region": "Niedersachsen", "country": "DEU", "lat": 53.096521, "lng": 11.089234, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_R7mfCmnxj8T", "name": "EDEKA Baasch, Eckernförde", "address": "EDEKA Fresh market Nauck, Sauerstraße 1-3, 24340 Windeby, Germany", "zip": "24340", "city": "Windeby", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.451076, "lng": 9.832361, "screensLandscape": 2, "screensPortrait": 3, "screensTotal": 5}, {"id": "Loc_4KGD88qz5LT", "name": "EDEKA Baasch, Kiel", "address": "Grippstraße 2, 24118 Kiel, Germany", "zip": "24118", "city": "Kiel", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.342841, "lng": 10.124304, "screensLandscape": 0, "screensPortrait": 2, "screensTotal": 2}, {"id": "Loc_JXReNSwYfV9", "name": "EDEKA Baaß, Dargun", "address": "EDEKA Baaß, Am Sportpl. 19, 17159 Dargun, Germany", "zip": "17159", "city": "Dargun", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 53.902681, "lng": 12.854659, "screensLandscape": 1, "screensPortrait": 0, "screensTotal": 1}, {"id": "Loc_3pbZxdvcBdR", "name": "EDEKA Baaß, Loitz", "address": "Schloßbergstraße 1C, 17121 Loitz, Germany", "zip": "17121", "city": "Loitz", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 53.973213, "lng": 13.133136, "screensLandscape": 1, "screensPortrait": 1, "screensTotal": 2}, {"id": "Loc_QCALgbunJZ5", "name": "EDEKA Bensch, Kühlungsborn", "address": "Reriker Str. 12, 18225 Kühlungsborn, Germany", "zip": "18225", "city": "Kühlungsborn", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.144903, "lng": 11.722986, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_MDbkxEAgmzo", "name": "EDEKA Berger, Flensburg", "address": "Werftstraße 29, 24939 Flensburg, Germany", "zip": "24939", "city": "Flensburg", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.799781, "lng": 9.425621, "screensLandscape": 0, "screensPortrait": 3, "screensTotal": 3}, {"id": "Loc_3EoEEysDDEX", "name": "EDEKA Bessen, Feldberger Seenlandschaft", "address": "Prenzlauer Str. 4, 17258 Feldberger Seenlandschaft, Germany", "zip": "17258", "city": "Feldberger Seenlandschaft", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 53.334674, "lng": 13.439041, "screensLandscape": 1, "screensPortrait": 1, "screensTotal": 2}, {"id": "Loc_bgi4JbFeo5y", "name": "EDEKA Bessen, Woldegk", "address": "Neutorstraße 32, 17348 Woldegk, Germany", "zip": "17348", "city": "Woldegk", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 53.456553, "lng": 13.58369, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_SrUm4D6AVoD", "name": "EDEKA Bobsien, HH, Köhlfleet-Hauptdeich", "address": "Köhlfleet-Hauptdeich 7, 21129 Hamburg, Germany", "zip": "21129", "city": "Hamburg", "region": "Hamburg", "country": "DEU", "lat": 53.533455, "lng": 9.881078, "screensLandscape": 1, "screensPortrait": 2, "screensTotal": 3}, {"id": "Loc_HQavk6hi5mH", "name": "EDEKA Bockelmann, Perleberg", "address": "Berliner Weg 9, 19348 Berge, Germany", "zip": "19348", "city": "Berge", "region": "Brandenburg", "country": "DEU", "lat": 53.066883, "lng": 11.871743, "screensLandscape": 4, "screensPortrait": 0, "screensTotal": 4}, {"id": "Loc_KsaSA3Do8hd", "name": "EDEKA Bockelmann, Putlitz", "address": "Zur Burghofwiese 1, 16949 Gransee, Germany", "zip": "16949", "city": "Gransee", "region": "Brandenburg", "country": "DEU", "lat": 53.249765, "lng": 12.045063, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_9UiWDcf8zGX", "name": "EDEKA Boehme, Tarp", "address": "Friedrich-Fröbel-Straße 11, 24963 Tarp, Germany", "zip": "24963", "city": "Tarp", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.664382, "lng": 9.396135, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_eC1hHncC9jM", "name": "EDEKA Boost, Brande-Hörnerkirchen", "address": "Steinstraße 2, 25364 Bokel, Germany", "zip": "25364", "city": "Bokel", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.854321, "lng": 9.706294, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_2dkQmaeDYvs", "name": "EDEKA Böse, Karlshagen", "address": "Strandstraße 6, 17449 Karlshagen, Germany", "zip": "17449", "city": "Karlshagen", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.118337, "lng": 13.83153, "screensLandscape": 3, "screensPortrait": 1, "screensTotal": 4}, {"id": "Loc_5kGzscNdTdH", "name": "EDEKA Böttjer, Bremervörde", "address": "EDEKA Böttjer, Neue Str. 36, 27432 Oerel, Germany", "zip": "27432", "city": "Oerel", "region": "Niedersachsen", "country": "DEU", "lat": 53.48748, "lng": 9.145466, "screensLandscape": 4, "screensPortrait": 0, "screensTotal": 4}, {"id": "Loc_azfo7qAyWjy", "name": "EDEKA Böttjer, Selsingen", "address": "Hauptstraße 7, 27446 Selsingen, Germany", "zip": "27446", "city": "Selsingen", "region": "Niedersachsen", "country": "DEU", "lat": 53.374843, "lng": 9.216563, "screensLandscape": 4, "screensPortrait": 0, "screensTotal": 4}, {"id": "Loc_bgde8L9ijks", "name": "EDEKA Brandt, Dierhagen", "address": "Strandstraße 27, 18347 Dierhagen, Germany", "zip": "18347", "city": "Dierhagen", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.291681, "lng": 12.353986, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_eY9CRpGY6ns", "name": "EDEKA Brehme, Rheinsberg", "address": "Paulshorster Str. 18b, 16831 Rheinsberg, Germany", "zip": "16831", "city": "Rheinsberg", "region": "Brandenburg", "country": "DEU", "lat": 53.099553, "lng": 12.899082, "screensLandscape": 1, "screensPortrait": 1, "screensTotal": 2}, {"id": "Loc_eddWgbt73So", "name": "EDEKA Breinlinger, Wolgast", "address": "Chausseestraße 17, 17438 Wolgast, Germany", "zip": "17438", "city": "Wolgast", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.050746, "lng": 13.767485, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_WMFEfV26Xtb", "name": "EDEKA Bretag, Hollenstedt", "address": "EDEKA Bretag, Hauptstraße 17, 21279 Appel, Germany", "zip": "21279", "city": "Appel", "region": "Niedersachsen", "country": "DEU", "lat": 53.366359, "lng": 9.71065, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_5ERTaM8GjLs", "name": "EDEKA Bretag, Neu Wulmstorf", "address": "Lindenstraße 1a, 21629 Neu Wulmstorf, Germany", "zip": "21629", "city": "Neu Wulmstorf", "region": "Niedersachsen", "country": "DEU", "lat": 53.422773, "lng": 9.788422, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_QL1tt9opqqh", "name": "EDEKA Brinkmann, Bad Bodenteich", "address": "Bergstraße 8, 29389 Bad Bodenteich, Germany", "zip": "29389", "city": "Bad Bodenteich", "region": "Niedersachsen", "country": "DEU", "lat": 52.832569, "lng": 10.674909, "screensLandscape": 2, "screensPortrait": 1, "screensTotal": 3}, {"id": "Loc_JNvhqUQt2fh", "name": "EDEKA Brüning, Ribnitz-Damgarten, Boddenstr.", "address": "Boddenstraße 2, 18311 Ribnitz-Damgarten, Germany", "zip": "18311", "city": "Ribnitz-Damgarten", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.245866, "lng": 12.408019, "screensLandscape": 4, "screensPortrait": 0, "screensTotal": 4}, {"id": "Loc_9YpGUujNiZM", "name": "EDEKA Brüning, Ribnitz-Damgarten, Saaler Ch.", "address": "Edeka Brüning, Saaler Ch 6, 18311 Ribnitz-Damgarten, Germany", "zip": "18311", "city": "Ribnitz-Damgarten", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.261089, "lng": 12.472061, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_3nhqkncCPZq", "name": "EDEKA Burmeister, Bad Segeberg, Anny-Schröder-Weg", "address": "Anny-Schröder-Weg 4-6, 23795 Weede, Germany", "zip": "23795", "city": "Weede", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.926724, "lng": 10.330008, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_5MuvVVJzWHM", "name": "EDEKA Buttkus, Büdelsdorf", "address": "Hollerstraße 72, 24782 Büdelsdorf, Germany", "zip": "24782", "city": "Büdelsdorf", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.314186, "lng": 9.674421, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_Apok7jUfdfM", "name": "EDEKA Clausen, HH, Alter Güterbahnhof", "address": "Alter Güterbahnhof 2, 22303 Hamburg, Germany", "zip": "22303", "city": "Hamburg", "region": "Hamburg", "country": "DEU", "lat": 53.592571, "lng": 10.035395, "screensLandscape": 2, "screensPortrait": 3, "screensTotal": 5}, {"id": "Loc_SdFJd1tLoV9", "name": "EDEKA Clausen, HH, Wiesendamm", "address": "Wiesendamm 32, 22305 Hamburg, Germany", "zip": "22305", "city": "Hamburg", "region": "Hamburg", "country": "DEU", "lat": 53.588432, "lng": 10.033943, "screensLandscape": 2, "screensPortrait": 1, "screensTotal": 3}, {"id": "Loc_3X7obY7mo2F", "name": "EDEKA Cohrt, Lamstedt", "address": "Am Galgenberg 3, 21769 Armstorf, Germany", "zip": "21769", "city": "Armstorf", "region": "Niedersachsen", "country": "DEU", "lat": 53.625603, "lng": 9.090169, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_QLzzRamaPdR", "name": "EDEKA Conrad, Hanstedt", "address": "Winsener Str. 36, 21271 Asendorf, Germany", "zip": "21271", "city": "Asendorf", "region": "Niedersachsen", "country": "DEU", "lat": 53.257814, "lng": 10.020715, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_JyjbRargMfV", "name": "EDEKA Dormeier, Bordesholm", "address": "EDEKA Dormeier, Bahnhofstraße 29-33, 24582 Bissee, Germany", "zip": "24582", "city": "Bissee", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.174451, "lng": 10.04552, "screensLandscape": 1, "screensPortrait": 3, "screensTotal": 4}, {"id": "Loc_3RUozpK7PTd", "name": "EDEKA Draeger, Uelzen, Gertrud-Noch-Str.", "address": "Gertrud-Noch-Straße 2-6, 29525 Uelzen, Germany", "zip": "29525", "city": "Uelzen", "region": "Niedersachsen", "country": "DEU", "lat": 52.957377, "lng": 10.578963, "screensLandscape": 1, "screensPortrait": 0, "screensTotal": 1}, {"id": "Loc_2sGkwkpYKcb", "name": "EDEKA Drewes, Dollern", "address": "Am Buschteich 34, 21739 Dollern, Germany", "zip": "21739", "city": "Dollern", "region": "Niedersachsen", "country": "DEU", "lat": 53.541914, "lng": 9.556717, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_gpi8Avc1A9V", "name": "EDEKA Drewes, Horneburg", "address": "Auedamm 3, 21640 Nottensdorf, Germany", "zip": "21640", "city": "Nottensdorf", "region": "Niedersachsen", "country": "DEU", "lat": 53.507659, "lng": 9.583916, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_hAjczsjru1h", "name": "EDEKA Drews, Tangstedt", "address": "budni Drogeriemarkt, Eichholzkoppel 1, 22889 Tangstedt, Germany", "zip": "22889", "city": "Tangstedt", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.730361, "lng": 10.095524, "screensLandscape": 0, "screensPortrait": 2, "screensTotal": 2}, {"id": "Loc_KTx1yEr9BrX", "name": "EDEKA Düllmann, Uelzen, St.-Viti-Str.", "address": "St.-Viti-Straße 13, 29525 Uelzen, Germany", "zip": "29525", "city": "Uelzen", "region": "Niedersachsen", "country": "DEU", "lat": 52.970331, "lng": 10.555958, "screensLandscape": 0, "screensPortrait": 5, "screensTotal": 5}, {"id": "Loc_3NDU5vB1N5u", "name": "EDEKA Dumnick, Franzburg", "address": "Abtshäger Str. 13, 18461 Franzburg, Germany", "zip": "18461", "city": "Franzburg", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.184086, "lng": 12.88306, "screensLandscape": 1, "screensPortrait": 0, "screensTotal": 1}, {"id": "Loc_7YQM6LvagQw", "name": "EDEKA Dumnick, Tribsees", "address": "Verbindungsweg 24A, 18465 Tribsees, Germany", "zip": "18465", "city": "Tribsees", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.090808, "lng": 12.758845, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_4JTqWsVvXa7", "name": "EDEKA Düver, Salzhausen", "address": "Alte Baumschule, 21376 Eyendorf, Germany", "zip": "21376", "city": "Eyendorf", "region": "Niedersachsen", "country": "DEU", "lat": 53.227536, "lng": 10.159403, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_WDhAncyMxHd", "name": "EDEKA E-Center A23, Elmshorn", "address": "Ramskamp 102, 25337 Elmshorn, Germany", "zip": "25337", "city": "Elmshorn", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.74253, "lng": 9.709404, "screensLandscape": 6, "screensPortrait": 1, "screensTotal": 7}, {"id": "Loc_F2jGdBEQ1gb", "name": "EDEKA E-Center Bergedorf, HH-Bergedorf", "address": "Alte Holstenstraße 30-32, 21031 Hamburg, Germany", "zip": "21031", "city": "Hamburg", "region": "Hamburg", "country": "DEU", "lat": 53.491941, "lng": 10.206913, "screensLandscape": 4, "screensPortrait": 0, "screensTotal": 4}, {"id": "Loc_9rTUtZmCizB", "name": "EDEKA E-Center Bockelmann, Wittenberge", "address": "Lenzener Ch 21, 19322 Breese, Germany", "zip": "19322", "city": "Breese", "region": "Brandenburg", "country": "DEU", "lat": 53.002913, "lng": 11.72118, "screensLandscape": 3, "screensPortrait": 2, "screensTotal": 5}, {"id": "Loc_DVjQzVJP2J3", "name": "EDEKA E-Center Cohrt, Cadenberge", "address": "Am Markt 4, 21781 Cadenberge, Germany", "zip": "21781", "city": "Cadenberge", "region": "Niedersachsen", "country": "DEU", "lat": 53.77243, "lng": 9.058522, "screensLandscape": 5, "screensPortrait": 0, "screensTotal": 5}, {"id": "Loc_D6ph2HKv9Jo", "name": "EDEKA E-Center Eggert, Stralsund", "address": "Gustower Weg 3, 18439 Stralsund, Germany", "zip": "18439", "city": "Stralsund", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.271871, "lng": 13.113661, "screensLandscape": 6, "screensPortrait": 1, "screensTotal": 7}, {"id": "Loc_2Xi4P5PZgPH", "name": "EDEKA E-Center Gillert, HH, Wandsbeker Ch.", "address": "Wandsbeker Chaussee 248, 22089 Hamburg, Germany", "zip": "22089", "city": "Hamburg", "region": "Hamburg", "country": "DEU", "lat": 53.568958, "lng": 10.058126, "screensLandscape": 4, "screensPortrait": 0, "screensTotal": 4}, {"id": "Loc_6MuaZVt2sDy", "name": "EDEKA E-Center Harburg, HH-Harburg", "address": "Bahnhof Harburg / Moorstraße, 21073 Hamburg, Germany", "zip": "21073", "city": "Hamburg", "region": "Hamburg", "country": "DEU", "lat": 53.457284, "lng": 9.98787, "screensLandscape": 2, "screensPortrait": 2, "screensTotal": 4}, {"id": "Loc_8LPVbLT2gs", "name": "EDEKA E-Center Hayunga, Elmshorn", "address": "Wedenkamp 9a, 25335 Elmshorn, Germany", "zip": "25335", "city": "Elmshorn", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.751736, "lng": 9.647416, "screensLandscape": 3, "screensPortrait": 1, "screensTotal": 4}, {"id": "Loc_Y6VmGGhdV6o", "name": "EDEKA E-Center Hollender, HH, Krohnstieg", "address": "Krohnstieg 41-43, 22415 Hamburg, Germany", "zip": "22415", "city": "Hamburg", "region": "Hamburg", "country": "DEU", "lat": 53.648954, "lng": 10.013568, "screensLandscape": 3, "screensPortrait": 2, "screensTotal": 5}, {"id": "Loc_KJDmF3eRD75", "name": "EDEKA E-Center Kliebisch, Hemmoor", "address": "Stader Str. 114, 21745 Hemmoor, Germany", "zip": "21745", "city": "Hemmoor", "region": "Niedersachsen", "country": "DEU", "lat": 53.689225, "lng": 9.171062, "screensLandscape": 5, "screensPortrait": 0, "screensTotal": 5}, {"id": "Loc_JYFWzWooRJP", "name": "EDEKA E-Center Lege, Lübeck", "address": "Ziegelstraße 2-8, 23556 Lübeck, Germany", "zip": "23556", "city": "Lübeck", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.871647, "lng": 10.665131, "screensLandscape": 4, "screensPortrait": 0, "screensTotal": 4}, {"id": "Loc_3k7QSvdCKWX", "name": "EDEKA E-Center Neuruppin, Neuruppin", "address": "Babimost- Ring 25, 16816 Gransee, Germany", "zip": "16816", "city": "Gransee", "region": "Brandenburg", "country": "DEU", "lat": 52.940614, "lng": 12.810982, "screensLandscape": 1, "screensPortrait": 1, "screensTotal": 2}, {"id": "Loc_EdMiB4YDfBu", "name": "EDEKA E-Center Süllau, Lübeck", "address": "Alexander-Fleming-Straße 1, 23562 Lübeck, Germany", "zip": "23562", "city": "Lübeck", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.83168, "lng": 10.690046, "screensLandscape": 0, "screensPortrait": 3, "screensTotal": 3}, {"id": "Loc_bwPxRDwSUjh", "name": "EDEKA Eggert, Freiburg", "address": "Hauptstraße 48-52, 21729 Freiburg, Germany", "zip": "21729", "city": "Freiburg", "region": "Niedersachsen", "country": "DEU", "lat": 53.826158, "lng": 9.287129, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_baWo4j3YEij", "name": "EDEKA Eggert, Kutenholz", "address": "EDEKA Eggert, Hauptstraße 3, 27449 Beverstedt, Germany", "zip": "27449", "city": "Beverstedt", "region": "Niedersachsen", "country": "DEU", "lat": 53.481904, "lng": 9.322903, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_ckEx8Sme1om", "name": "EDEKA Eggert, Sörup", "address": "Bahnhofstraße 40, 24966 Sörup, Germany", "zip": "24966", "city": "Sörup", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.71902, "lng": 9.677694, "screensLandscape": 1, "screensPortrait": 1, "screensTotal": 2}, {"id": "Loc_VZVnsZUX4h5", "name": "EDEKA Ernst, Schwerin", "address": "Wismarsche Str. 300 a, 19055 Schwerin, Germany", "zip": "19055", "city": "Schwerin", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 53.646562, "lng": 11.405693, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_Hnv2U5DN1UT", "name": "EDEKA Fick, Busdorf", "address": "Haddebyer Ch 1, 24866 Busdorf, Germany", "zip": "24866", "city": "Busdorf", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.499775, "lng": 9.551612, "screensLandscape": 1, "screensPortrait": 2, "screensTotal": 3}, {"id": "Loc_9c5LnWVoT35", "name": "EDEKA Fiedler, Kiel", "address": "Doktor-Hell-Straße 1, 24107 Kiel, Germany", "zip": "24107", "city": "Kiel", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.350138, "lng": 10.088503, "screensLandscape": 5, "screensPortrait": 0, "screensTotal": 5}, {"id": "Loc_HRfBaBeoDGj", "name": "EDEKA Golly, Cuxhaven", "address": "Feldweg 15, 27474 Beverstedt, Germany", "zip": "27474", "city": "Beverstedt", "region": "Niedersachsen", "country": "DEU", "lat": 53.870714, "lng": 8.687853, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_fSUVUGkojV1", "name": "EDEKA Greinert, Scharnebeck", "address": "Bardowicker Str. 13, 21379 Echem, Germany", "zip": "21379", "city": "Echem", "region": "Niedersachsen", "country": "DEU", "lat": 53.294242, "lng": 10.503385, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_ERGV5rtgKPM", "name": "EDEKA Groth, Neustrelitz", "address": "Kühlhausberg 7, 17235 Neustrelitz, Germany", "zip": "17235", "city": "Neustrelitz", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 53.347402, "lng": 13.079074, "screensLandscape": 4, "screensPortrait": 1, "screensTotal": 5}, {"id": "Loc_E9deQ9j5X19", "name": "EDEKA Grübnau, Krakow am See", "address": "Bahnhofspl. 3, 18292 Krakow am See, Germany", "zip": "18292", "city": "Krakow am See", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 53.650886, "lng": 12.265829, "screensLandscape": 0, "screensPortrait": 2, "screensTotal": 2}, {"id": "Loc_Zfj2GCU2fMh", "name": "EDEKA Grümmer A+B, Neumünster", "address": "Baeyerstraße 1, 24536 Neumünster, Germany", "zip": "24536", "city": "Neumünster", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.100668, "lng": 9.977714, "screensLandscape": 1, "screensPortrait": 1, "screensTotal": 2}, {"id": "Loc_FMeLYv1EVUj", "name": "EDEKA Grümmi, Ascheberg", "address": "Langenrade 2, 24326 Ascheberg, Germany", "zip": "24326", "city": "Ascheberg", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.14996, "lng": 10.343456, "screensLandscape": 1, "screensPortrait": 0, "screensTotal": 1}, {"id": "Loc_bP3M7w6idmZ", "name": "EDEKA Haas, Owschlag", "address": "Eisenbahnstraße 7, 24811 Brekendorf, Germany", "zip": "24811", "city": "Brekendorf", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.397771, "lng": 9.587292, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_Vv6armm2wRH", "name": "EDEKA Hapke, Kellinghusen", "address": "An d. Stör 2d, 25548 Rosdorf, Germany", "zip": "25548", "city": "Rosdorf", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.947321, "lng": 9.714002, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_EktR9oNyzf", "name": "EDEKA Hartmann, Damp", "address": "Gartenstraße 6, 24351 Damp, Germany", "zip": "24351", "city": "Damp", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.570679, "lng": 9.958364, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_TPKF9dro7kB", "name": "EDEKA Harttgen, Bienenbüttel", "address": "Ladestraße 9, 29553 Bienenbüttel, Germany", "zip": "29553", "city": "Bienenbüttel", "region": "Niedersachsen", "country": "DEU", "lat": 53.140788, "lng": 10.48792, "screensLandscape": 1, "screensPortrait": 1, "screensTotal": 2}, {"id": "Loc_BWh4wNDjwWw", "name": "EDEKA Hartwig & Senol, Langballig", "address": "Schwarze Str. 19, 24977 Langballig, Germany", "zip": "24977", "city": "Langballig", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.799511, "lng": 9.635083, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_dZazwAET4Zu", "name": "EDEKA Hauschildt/Albrechtsen, Flintbek", "address": "Dorfstraße 14, 24220 Boksee, Germany", "zip": "24220", "city": "Boksee", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.241123, "lng": 10.142876, "screensLandscape": 5, "screensPortrait": 0, "screensTotal": 5}, {"id": "Loc_5awAbtkhouH", "name": "EDEKA Hauschildt, Rendsburg", "address": "Konrad-Adenauer-Straße 1, 24768 Rendsburg, Germany", "zip": "24768", "city": "Rendsburg", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.303035, "lng": 9.67215, "screensLandscape": 4, "screensPortrait": 0, "screensTotal": 4}, {"id": "Loc_EphGBockPEo", "name": "EDEKA Hayunga, Norderstedt, Quickborner Str.", "address": "Quickborner Str. 52, 22844 Norderstedt, Germany", "zip": "22844", "city": "Norderstedt", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.734776, "lng": 9.988867, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_7EBLVtKJuef", "name": "EDEKA Hayunga, Norderstedt, Rugenbarg", "address": "Rugenbarg 19, 22848 Norderstedt, Germany", "zip": "22848", "city": "Norderstedt", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.672445, "lng": 9.987848, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_UxishrEbdod", "name": "EDEKA Heimer, Satrup", "address": "Hans-Redlefsen-Straße 6, 24986 Mittelangeln, Germany", "zip": "24986", "city": "Mittelangeln", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.692158, "lng": 9.595842, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_gX8PsJanVZy", "name": "EDEKA Hennings, Horst", "address": "Horster Viereck 1, 25358 Horst, Germany", "zip": "25358", "city": "Horst", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.804767, "lng": 9.623623, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_G4uNsPY1o4j", "name": "EDEKA Herrmann, Röbel", "address": "Am Hafen 10, 17207 Gotthun, Germany", "zip": "17207", "city": "Gotthun", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 53.38318, "lng": 12.605792, "screensLandscape": 1, "screensPortrait": 1, "screensTotal": 2}, {"id": "Loc_ZqEdh5wZ9GT", "name": "EDEKA Hirche, HH", "address": "Harkortstraße 81d, 22765 Hamburg, Germany", "zip": "22765", "city": "Hamburg", "region": "Hamburg", "country": "DEU", "lat": 53.557494, "lng": 9.936967, "screensLandscape": 1, "screensPortrait": 1, "screensTotal": 2}, {"id": "Loc_DE93uSCFtDm", "name": "EDEKA Holst, HH", "address": "Paul-Roosen-Straße 8, 22767 Hamburg, Germany", "zip": "22767", "city": "Hamburg", "region": "Hamburg", "country": "DEU", "lat": 53.55298, "lng": 9.959744, "screensLandscape": 1, "screensPortrait": 2, "screensTotal": 3}, {"id": "Loc_7CisebjPYEK", "name": "EDEKA Hoof, Osterrönfeld", "address": "Kieler Str. 98A, 24783 Osterrönfeld, Germany", "zip": "24783", "city": "Osterrönfeld", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.293926, "lng": 9.707805, "screensLandscape": 4, "screensPortrait": 0, "screensTotal": 4}, {"id": "Loc_5CQQLTbqdq1", "name": "EDEKA Hoof, Schacht-Audorf", "address": "Kieler Str. 17 A, 24790 Schacht-Audorf, Germany", "zip": "24790", "city": "Schacht-Audorf", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.313147, "lng": 9.715433, "screensLandscape": 1, "screensPortrait": 1, "screensTotal": 2}, {"id": "Loc_XvvD1GSbR3m", "name": "EDEKA Hösel, Flensburg", "address": "Engelsbyer Str. 29, 24943 Tastrup, Germany", "zip": "24943", "city": "Tastrup", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.793591, "lng": 9.47007, "screensLandscape": 1, "screensPortrait": 0, "screensTotal": 1}, {"id": "Loc_7H1J2s1ZgdD", "name": "EDEKA Huchthausen, Neumünster", "address": "24 Neumünster, Germany", "zip": "24534", "city": "Neumünster", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.072943, "lng": 9.984016, "screensLandscape": 1, "screensPortrait": 2, "screensTotal": 3}, {"id": "Loc_iCgDFMH7xwR", "name": "EDEKA Jänecke, Adendorf", "address": "Artlenburger Landstraße 66, 21365 Adendorf, Germany", "zip": "21365", "city": "Adendorf", "region": "Niedersachsen", "country": "DEU", "lat": 53.287686, "lng": 10.427853, "screensLandscape": 2, "screensPortrait": 1, "screensTotal": 3}, {"id": "Loc_5Vvc862iw3m", "name": "EDEKA Jens, Born/Darß", "address": "Bäderstraße 1, 18375 Prerow, Germany", "zip": "18375", "city": "Prerow", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.392592, "lng": 12.540999, "screensLandscape": 4, "screensPortrait": 0, "screensTotal": 4}, {"id": "Loc_58VieY6gDb5", "name": "EDEKA Jens, Burg/Fehmarn", "address": "Am Markt 27, 23769 Fehmarn, Germany", "zip": "23769", "city": "Fehmarn", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.439286, "lng": 11.197888, "screensLandscape": 1, "screensPortrait": 1, "screensTotal": 2}, {"id": "Loc_e87pyp8DvPZ", "name": "EDEKA Jensen, Büsum", "address": "Alleestraße 6, 25761 Büsum, Germany", "zip": "25761", "city": "Büsum", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.131234, "lng": 8.860679, "screensLandscape": 4, "screensPortrait": 0, "screensTotal": 4}, {"id": "Loc_GeNg8hDPTJo", "name": "EDEKA Jensen, Büsum, Heider Str.", "address": "Heider Str. 2a, 25761 Büsum, Germany", "zip": "25761", "city": "Büsum", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.138232, "lng": 8.87374, "screensLandscape": 4, "screensPortrait": 0, "screensTotal": 4}, {"id": "Loc_eSs8DSEQoLs", "name": "EDEKA Jensen, Büsum, Nordseestr.", "address": "Nordseestraße 16, 25761 Büsum, Germany", "zip": "25761", "city": "Büsum", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.13247, "lng": 8.850084, "screensLandscape": 2, "screensPortrait": 2, "screensTotal": 4}, {"id": "Loc_88JWVhEVvV5", "name": "EDEKA Jensen, Elmshorn, Hainholzer Damm", "address": "Hainholzer Damm 5, 25337 Elmshorn, Germany", "zip": "25337", "city": "Elmshorn", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.745942, "lng": 9.671969, "screensLandscape": 5, "screensPortrait": 0, "screensTotal": 5}, {"id": "Loc_AdJoJv2vSuD", "name": "EDEKA Jensen, Elmshorn, Meteorstr.", "address": "Meteorstraße 1A, 25336 Elmshorn, Germany", "zip": "25336", "city": "Elmshorn", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.743608, "lng": 9.656024, "screensLandscape": 2, "screensPortrait": 1, "screensTotal": 3}, {"id": "Loc_CvoZu2brXu9", "name": "EDEKA Jensen, Kropp", "address": "Industriestraße 1, 24848 Kropp, Germany", "zip": "24848", "city": "Kropp", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.412742, "lng": 9.520822, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_PEtQC3P11Fu", "name": "EDEKA Jensen, Schleswig", "address": "Schwarzer Weg 17, 24837 Schleswig, Germany", "zip": "24837", "city": "Schleswig", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.515421, "lng": 9.561269, "screensLandscape": 1, "screensPortrait": 2, "screensTotal": 3}, {"id": "Loc_iF8cdZSZhvF", "name": "EDEKA Jensen, Uetersen", "address": "Gerberstraße 3, 25436 Tornesch, Germany", "zip": "25436", "city": "Tornesch", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.680922, "lng": 9.672399, "screensLandscape": 3, "screensPortrait": 1, "screensTotal": 4}, {"id": "Loc_EJFfUKVNXC3", "name": "EDEKA Jensen, Wedel", "address": "Am Marienhof 3, 22880 Wedel, Germany", "zip": "22880", "city": "Wedel", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.592607, "lng": 9.708857, "screensLandscape": 0, "screensPortrait": 2, "screensTotal": 2}, {"id": "Loc_RWY4eVWuJLX", "name": "EDEKA Jens, Grömitz", "address": "EDEKA Jens, Am Markt 1-3, 23743 Grömitz, Germany", "zip": "23743", "city": "Grömitz", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.151919, "lng": 10.956041, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_ZYSi5YoBpqM", "name": "EDEKA Jens, Großenbrode", "address": "Strandstraße 1, 23775 Großenbrode, Germany", "zip": "23775", "city": "Großenbrode", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.366908, "lng": 11.083777, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_2B7vXp4s7Fm", "name": "EDEKA Jens, Heiligenhafen", "address": "EDEKA Jens, Höhenweg 4, 23774 Heiligenhafen, Germany", "zip": "23774", "city": "Heiligenhafen", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.363619, "lng": 10.967104, "screensLandscape": 3, "screensPortrait": 1, "screensTotal": 4}, {"id": "Loc_cQJbqrxK5yZ", "name": "EDEKA Jens, Lensahn", "address": "Eutiner Str. 11, 23738 Lensahn, Germany", "zip": "23738", "city": "Lensahn", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.219864, "lng": 10.88472, "screensLandscape": 1, "screensPortrait": 1, "screensTotal": 2}, {"id": "Loc_FZYGa2tMnzs", "name": "EDEKA Jens, Lübeck", "address": "Mecklenburger Landstraße 51, 23570 Lübeck, Germany", "zip": "23570", "city": "Lübeck", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.954042, "lng": 10.884784, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_crVehjrsDA7", "name": "EDEKA Jens, Niendorf", "address": "Paduaweg 3, 23669 Timmendorfer Strand, Germany", "zip": "23669", "city": "Timmendorfer Strand", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.991065, "lng": 10.831254, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_j5TttpUkCcX", "name": "EDEKA Jens, Rostock-Gehlsdorf", "address": "Schulstraße 5, 18147 Rostock, Germany", "zip": "18147", "city": "Rostock", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.104019, "lng": 12.116003, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_dMw77j13Rvo", "name": "EDEKA Jens, Schönwalde", "address": "EDEKA Jens, Oldenburger Str. 19, 23744 Schönwalde am Bungsberg, Germany", "zip": "23744", "city": "Schönwalde am Bungsberg", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.186045, "lng": 10.763996, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_9Ph2bxsKvsy", "name": "EDEKA Jens, Weissenhäuser Strand", "address": "Seestraße 1, 23758 Wangels, Germany", "zip": "23758", "city": "Wangels", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.31014, "lng": 10.801258, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_ivBNS97Tj7D", "name": "EDEKA Jessen, HH, Hummelsbütteler Markt", "address": "Hummelsbütteler Markt 34, 22339 Hamburg, Germany", "zip": "22339", "city": "Hamburg", "region": "Hamburg", "country": "DEU", "lat": 53.643216, "lng": 10.046852, "screensLandscape": 2, "screensPortrait": 2, "screensTotal": 4}, {"id": "Loc_bV2yWZNgSqu", "name": "EDEKA Jessen, HH, Volksdorfer Damm", "address": "Volksdorfer Damm 271, 22395 Hamburg, Germany", "zip": "22395", "city": "Hamburg", "region": "Hamburg", "country": "DEU", "lat": 53.671256, "lng": 10.125297, "screensLandscape": 1, "screensPortrait": 1, "screensTotal": 2}, {"id": "Loc_X5wgnG5W2B", "name": "EDEKA Junius, Glinde", "address": "Möllner Landstraße 119, 21509 Glinde, Germany", "zip": "21509", "city": "Glinde", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.543128, "lng": 10.214134, "screensLandscape": 1, "screensPortrait": 3, "screensTotal": 4}, {"id": "Loc_Ao41sgaYzL7", "name": "EDEKA Jürgensen, Handewitt", "address": "Wiesharder Markt 3, 24983 Handewitt, Germany", "zip": "24983", "city": "Handewitt", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.770457, "lng": 9.322745, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_ZeFUs83JWw9", "name": "EDEKA Kaiser, Rerik", "address": "Am Parkpl. 10, 18230 Rerik, Germany", "zip": "18230", "city": "Rerik", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.106968, "lng": 11.620521, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_D8WC9ktqXLB", "name": "EDEKA Kepp, Graal-Müritz", "address": "Lange Str. 29, 18181 Graal-Müritz, Germany", "zip": "18181", "city": "Graal-Müritz", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.249463, "lng": 12.242031, "screensLandscape": 2, "screensPortrait": 2, "screensTotal": 4}, {"id": "Loc_LZ1QL9W2jCs", "name": "EDEKA Knudtsen, Wyk/Föhr", "address": "Boldixumer Str. 13-15, 25938 Dunsum, Germany", "zip": "25938", "city": "Dunsum", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.691652, "lng": 8.56536, "screensLandscape": 2, "screensPortrait": 2, "screensTotal": 4}, {"id": "Loc_bMfRSo4pGis", "name": "EDEKA Kolasa Altentreptow", "address": "Fritz-Reuter-Straße 13, 17087 Altentreptow, Germany", "zip": "17087", "city": "Altentreptow", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 53.691649, "lng": 13.258471, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_8djyfkWMUvK", "name": "EDEKA Kollortz, Neustadt-Glewe", "address": "Brauereistraße 9B, 19306 Blievenstorf, Germany", "zip": "19306", "city": "Blievenstorf", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 53.376361, "lng": 11.589928, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_Xp4xudw3YuD", "name": "EDEKA Korzak, Grevesmühlen", "address": "Klützer Str. 57, 23936 Moor-Rolofshagen, Germany", "zip": "23936", "city": "Moor-Rolofshagen", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 53.872911, "lng": 11.181794, "screensLandscape": 4, "screensPortrait": 0, "screensTotal": 4}, {"id": "Loc_bwRLGfEwL5D", "name": "EDEKA Krause, Tessin", "address": "Am Recknitzpark 3, 18195 Selpin, Germany", "zip": "18195", "city": "Selpin", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.031246, "lng": 12.446955, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_AAQ7wdseWJj", "name": "EDEKA Kröger, Handeloh", "address": "Am Markt 3, 21256 Handeloh, Germany", "zip": "21256", "city": "Handeloh", "region": "Niedersachsen", "country": "DEU", "lat": 53.244479, "lng": 9.84428, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_eqpK38ZwcLw", "name": "EDEKA Kröger, HH-Blankenese", "address": "Blankeneser Bahnhofstraße 17, 22587 Hamburg, Germany", "zip": "22587", "city": "Hamburg", "region": "Hamburg", "country": "DEU", "lat": 53.559893, "lng": 9.811596, "screensLandscape": 1, "screensPortrait": 0, "screensTotal": 1}, {"id": "Loc_cSwR5okXh2f", "name": "EDEKA Kröger, HH-Wandsbek", "address": "Wandsbeker Marktstraße 38, 22041 Hamburg, Germany", "zip": "22041", "city": "Hamburg", "region": "Hamburg", "country": "DEU", "lat": 53.570849, "lng": 10.063285, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_F2bE66miK5y", "name": "EDEKA Kröger, Stelle", "address": "Harburger Str. 22, 21435 Stelle, Germany", "zip": "21435", "city": "Stelle", "region": "Niedersachsen", "country": "DEU", "lat": 53.38515, "lng": 10.105931, "screensLandscape": 4, "screensPortrait": 0, "screensTotal": 4}, {"id": "Loc_MSUUzD3MQLw", "name": "EDEKA Krüger, Prora/Binz", "address": "Vierte Str. 2, 18609 Binz, Germany", "zip": "18609", "city": "Binz", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.442769, "lng": 13.56765, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_39C86PMbKtb", "name": "EDEKA Lacina, Erfde", "address": "Süderende 4-6, 24803 Erfde, Germany", "zip": "24803", "city": "Erfde", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.308452, "lng": 9.316852, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_4DBy8xEu3yR", "name": "EDEKA Lange, Hohnstorf", "address": "Am Sportzentrum 5, 21522 Hohnstorf, Germany", "zip": "21522", "city": "Hohnstorf", "region": "Niedersachsen", "country": "DEU", "lat": 53.363431, "lng": 10.550952, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_7P91s3M8EhM", "name": "EDEKA Lawrenz, Großenwiehe", "address": "Hauptstraße 2, 24969 Lindewitt, Germany", "zip": "24969", "city": "Lindewitt", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.706347, "lng": 9.248581, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_VZoi7FwnvWs", "name": "EDEKA Ley, Oldenburg", "address": "Göhler Str. 7, 23758 Wangels, Germany", "zip": "23758", "city": "Wangels", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.291048, "lng": 10.892257, "screensLandscape": 3, "screensPortrait": 1, "screensTotal": 4}, {"id": "Loc_NKtCaoNEfLK", "name": "EDEKA Linow, HH", "address": "Mozartstraße 16, 22083 Hamburg, Germany", "zip": "22083", "city": "Hamburg", "region": "Hamburg", "country": "DEU", "lat": 53.577533, "lng": 10.020879, "screensLandscape": 2, "screensPortrait": 2, "screensTotal": 4}, {"id": "Loc_GfgFYRSTWrK", "name": "EDEKA Lübke, Binz", "address": "Dünenstraße 57, 18609 Binz, Germany", "zip": "18609", "city": "Binz", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.40942, "lng": 13.599798, "screensLandscape": 1, "screensPortrait": 1, "screensTotal": 2}, {"id": "Loc_SfRQKu5zHdq", "name": "EDEKA Lück, Leck", "address": "EDEKA Lück, Hauptstraße 28, 25917 Leck, Germany", "zip": "25917", "city": "Leck", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.772622, "lng": 8.970538, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_9h1eYzroTPV", "name": "EDEKA Lück, Niebüll", "address": "Uhlebüller Str. 6, 25899 Niebüll, Germany", "zip": "25899", "city": "Niebüll", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.791245, "lng": 8.828973, "screensLandscape": 2, "screensPortrait": 1, "screensTotal": 3}, {"id": "Loc_4wZj4wz881D", "name": "EDEKA Lüdke, Pampow", "address": "Ahornstraße 25, 19075 Warsow, Germany", "zip": "19075", "city": "Warsow", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 53.565786, "lng": 11.363889, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_FQKLsKF7Yij", "name": "EDEKA Maaß, Altenkirchen, Marktstr.", "address": "Marktstraße, 18556 Wiek, Germany", "zip": "18556", "city": "Wiek", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.632665, "lng": 13.346135, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_B1QFCvPMiZm", "name": "EDEKA Maaß, Pritzwalk, Am Ring", "address": "Am Ring 41, 16928 Gumtow, Germany", "zip": "16928", "city": "Gumtow", "region": "Brandenburg", "country": "DEU", "lat": 53.158813, "lng": 12.177465, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_KkNo5LDdPps", "name": "EDEKA Maaß, Wittstock", "address": "Papenbrucher Ch 4, 16909 Heiligengrabe, Germany", "zip": "16909", "city": "Heiligengrabe", "region": "Brandenburg", "country": "DEU", "lat": 53.155904, "lng": 12.479975, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_AhvtRYbRPcB", "name": "EDEKA Märkl, Lübeck", "address": "Ratzeburger Allee 127, 23562 Lübeck, Germany", "zip": "23562", "city": "Lübeck", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.840853, "lng": 10.709487, "screensLandscape": 1, "screensPortrait": 1, "screensTotal": 2}, {"id": "Loc_JZnMdQLk1K5", "name": "EDEKA Meibohm, Ahlerstedt", "address": "Am Schützenhof 3, 21702 Ahlerstedt, Germany", "zip": "21702", "city": "Ahlerstedt", "region": "Niedersachsen", "country": "DEU", "lat": 53.404259, "lng": 9.453953, "screensLandscape": 5, "screensPortrait": 0, "screensTotal": 5}, {"id": "Loc_FcvRDAkFT2X", "name": "EDEKA Meibohm, Harsefeld", "address": "EDEKA Meibohm, Mittelfelder Str. 2, 21698 Harsefeld, Germany", "zip": "21698", "city": "Harsefeld", "region": "Niedersachsen", "country": "DEU", "lat": 53.449105, "lng": 9.494957, "screensLandscape": 5, "screensPortrait": 1, "screensTotal": 6}, {"id": "Loc_8CACJ8ATQ8X", "name": "EDEKA Meibohm, HH", "address": "Süderelbering 1, 21149 Hamburg, Germany", "zip": "21149", "city": "Hamburg", "region": "Hamburg", "country": "DEU", "lat": 53.472123, "lng": 9.851253, "screensLandscape": 5, "screensPortrait": 0, "screensTotal": 5}, {"id": "Loc_W2qD2uHP3wm", "name": "EDEKA Meier, Bad Kleinen", "address": "Am Turmhaus 10, 23996 Bad Kleinen, Germany", "zip": "23996", "city": "Bad Kleinen", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 53.772478, "lng": 11.478355, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_74mARNH3jHh", "name": "EDEKA Meier, Warin", "address": "EDEKA Meier, Bützower Str. 1, 19417 Warin, Germany", "zip": "19417", "city": "Warin", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 53.800436, "lng": 11.711713, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_DXo7qbBELCX", "name": "EDEKA Merchel, Lübeck", "address": "Mönkhofer Weg 1, 23564 Lübeck, Germany", "zip": "23564", "city": "Lübeck", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.853237, "lng": 10.699441, "screensLandscape": 2, "screensPortrait": 2, "screensTotal": 4}, {"id": "Loc_28FtYRM4pnb", "name": "EDEKA Meyer, Garstedt", "address": "EDEKA Meyer, Bahnhofstraße 79, 21441 Garstedt, Germany", "zip": "21441", "city": "Garstedt", "region": "Niedersachsen", "country": "DEU", "lat": 53.293424, "lng": 10.143512, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_TTskJu5p51R", "name": "EDEKA Meyer, Wrist", "address": "Eken 2, 25563 Wrist, Germany", "zip": "25563", "city": "Wrist", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.92854, "lng": 9.751242, "screensLandscape": 2, "screensPortrait": 1, "screensTotal": 3}, {"id": "Loc_cch6rZV7RDy", "name": "EDEKA Misigaiski, Perleberg, August-Bebel Straße 2", "address": "August-Bebel-Straße 2, 19348 Berge, Germany", "zip": "19348", "city": "Berge", "region": "Brandenburg", "country": "DEU", "lat": 53.070527, "lng": 11.858092, "screensLandscape": 1, "screensPortrait": 1, "screensTotal": 2}, {"id": "Loc_YsFDvSJLWKH", "name": "EDEKA Mues, Deutsch-Evern", "address": "Am Alten Landhaus 2, 21407 Deutsch Evern, Germany", "zip": "21407", "city": "Deutsch Evern", "region": "Niedersachsen", "country": "DEU", "lat": 53.20241, "lng": 10.437857, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_8LBY9NhcWw", "name": "EDEKA Müller, Hamburg", "address": "Fuhlsbüttler Str. 188-190, 22307 Hamburg, Germany", "zip": "22307", "city": "Hamburg", "region": "Hamburg", "country": "DEU", "lat": 53.5945, "lng": 10.044289, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_TpuxbrFtPHq", "name": "EDEKA Müller, Husum", "address": "Großstraße 15-17, 25813 Husum, Germany", "zip": "25813", "city": "Husum", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.47701, "lng": 9.04986, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_2GpjMAr22pP", "name": "EDEKA Müller, Lauenburg", "address": "Berliner Str. 17-25, 21481 Schnakenbek, Germany", "zip": "21481", "city": "Schnakenbek", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.37438, "lng": 10.55694, "screensLandscape": 3, "screensPortrait": 1, "screensTotal": 4}, {"id": "Loc_fw3UqXpEhM1", "name": "EDEKA Müller, Mölln, Hauptstr.", "address": "Hauptstraße 21, 23879 Mölln, Germany", "zip": "23879", "city": "Mölln", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.627568, "lng": 10.686347, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_LBxm3ojfwWw", "name": "EDEKA Müller, Mölln, Kolberger Str.", "address": "Kolberger Str. 2-3, 23879 Mölln, Germany", "zip": "23879", "city": "Mölln", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.601232, "lng": 10.695554, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_LYtFdrhDoro", "name": "EDEKA Münster, Kiel", "address": "EDEKA Alexander Münster e.K, Hamburger Ch 178, 24113 Kiel, Germany", "zip": "24113", "city": "Kiel", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.299495, "lng": 10.104415, "screensLandscape": 6, "screensPortrait": 0, "screensTotal": 6}, {"id": "Loc_6AsRXnKAD67", "name": "EDEKA Neukauf Malchow, Malchow", "address": "Stauffenbergstraße 9, 17213 Malchow, Germany", "zip": "17213", "city": "Malchow", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 53.478173, "lng": 12.424169, "screensLandscape": 1, "screensPortrait": 1, "screensTotal": 2}, {"id": "Loc_EdvtSMvCYvj", "name": "EDEKA Neukauf Prerow", "address": "Bergstraße 4, 18375 Prerow, Germany", "zip": "18375", "city": "Prerow", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.4467, "lng": 12.56823, "screensLandscape": 1, "screensPortrait": 2, "screensTotal": 3}, {"id": "Loc_CjJA39SeNyu", "name": "EDEKA Neukauf Sophienhof, Kiel", "address": "Sophienblatt 20, 24103 Kiel, Germany", "zip": "24103", "city": "Kiel", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.316616, "lng": 10.130531, "screensLandscape": 0, "screensPortrait": 3, "screensTotal": 3}, {"id": "Loc_XWdjvenCDj5", "name": "EDEKA Neukauf Warnemünde, Warnemünde", "address": "Kirchenpl. 3, 18119 Rostock, Germany", "zip": "18119", "city": "Rostock", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.176336, "lng": 12.084568, "screensLandscape": 1, "screensPortrait": 1, "screensTotal": 2}, {"id": "Loc_CjfmGX5goEF", "name": "EDEKA Niemeyer, Süderbrarup", "address": "Südertoft 2, 24392 Boren, Germany", "zip": "24392", "city": "Boren", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.633857, "lng": 9.775348, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_XmhV6ur6hyR", "name": "EDEKA Nissen, Utersum", "address": "Jaardenhuug 9, 25938 Utersum, Germany", "zip": "25938", "city": "Utersum", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.712969, "lng": 8.407313, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_hJXTrpnLnrB", "name": "EDEKA Nöhring, HH", "address": "Fleetpl. 2-4, 21035 Hamburg, Germany", "zip": "21035", "city": "Hamburg", "region": "Hamburg", "country": "DEU", "lat": 53.489371, "lng": 10.157647, "screensLandscape": 3, "screensPortrait": 1, "screensTotal": 4}, {"id": "Loc_8xGsx7jsUAj", "name": "EDEKA Ott, Harrislee", "address": "Am Markt 7-9, 24955 Harrislee, Germany", "zip": "24955", "city": "Harrislee", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.799471, "lng": 9.396574, "screensLandscape": 2, "screensPortrait": 2, "screensTotal": 4}, {"id": "Loc_9piWKXWbdbV", "name": "EDEKA Paasch, Fleckeby", "address": "Hauptstraße 17, 24357 Fleckeby, Germany", "zip": "24357", "city": "Fleckeby", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.482087, "lng": 9.69654, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_99LQmdsvHqy", "name": "EDEKA Parau, Büchen", "address": "Möllner Str. 22b, 21514 Fitzen, Germany", "zip": "21514", "city": "Fitzen", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.485438, "lng": 10.616791, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_CTMC14FMito", "name": "EDEKA Pläth, Clenze", "address": "Lange Str. 6, 29459 Clenze, Germany", "zip": "29459", "city": "Clenze", "region": "Niedersachsen", "country": "DEU", "lat": 52.935349, "lng": 10.954042, "screensLandscape": 2, "screensPortrait": 2, "screensTotal": 4}, {"id": "Loc_6CAKWiEbQWK", "name": "EDEKA Pläth, Lüchow", "address": "Drawehner Str. 6-10, 29439 Lüchow, Germany", "zip": "29439", "city": "Lüchow", "region": "Niedersachsen", "country": "DEU", "lat": 52.967251, "lng": 11.150779, "screensLandscape": 1, "screensPortrait": 2, "screensTotal": 3}, {"id": "Loc_Yav65Cp94yu", "name": "EDEKA Popall, Pellworm", "address": "Tammensiel 20a, 25849 Pellworm, Germany", "zip": "25849", "city": "Pellworm", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.523103, "lng": 8.68356, "screensLandscape": 3, "screensPortrait": 1, "screensTotal": 4}, {"id": "Loc_Mr3ou9uras1", "name": "EDEKA Prahl, Melbeck", "address": "Uelzener Str. 27, 21406 Melbeck, Germany", "zip": "21406", "city": "Melbeck", "region": "Niedersachsen", "country": "DEU", "lat": 53.178236, "lng": 10.413501, "screensLandscape": 4, "screensPortrait": 0, "screensTotal": 4}, {"id": "Loc_Au7iT1Nv6yd", "name": "EDEKA Preller, Gingst", "address": "Mühlenstraße 39, 18569 Gingst, Germany", "zip": "18569", "city": "Gingst", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.457349, "lng": 13.254033, "screensLandscape": 2, "screensPortrait": 1, "screensTotal": 3}, {"id": "Loc_J32dNjFinVV", "name": "EDEKA Preller, Prohn", "address": "Stralsunder Str. 9A, 18445 Prohn, Germany", "zip": "18445", "city": "Prohn", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.366886, "lng": 13.026529, "screensLandscape": 3, "screensPortrait": 1, "screensTotal": 4}, {"id": "Loc_dryHYfidtLw", "name": "EDEKA Preller, Putbus-Lauterbauch", "address": "Chausseestraße 8, 18581 Putbus, Germany", "zip": "18581", "city": "Putbus", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.346065, "lng": 13.497794, "screensLandscape": 1, "screensPortrait": 1, "screensTotal": 2}, {"id": "Loc_h6q9sanLxf1", "name": "EDEKA Preller, Sagard", "address": "EDEKA Preller, Schulstraße 19, 18551 Lohme, Germany", "zip": "18551", "city": "Lohme", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.528067, "lng": 13.54748, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_DrBNS4mKp1d", "name": "EDEKA Preller, Stralsund", "address": "Edeka Neukauf, Rudolf-Breitscheid-Straße 5, 18437 Stralsund, Germany", "zip": "18437", "city": "Stralsund", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.313567, "lng": 13.076927, "screensLandscape": 2, "screensPortrait": 1, "screensTotal": 3}, {"id": "Loc_Wm2b2CfhU6s", "name": "EDEKA Prill, Ludwigslust, Breite Str.", "address": "Breite Str. 4-6, 19288 Ludwigslust, Germany", "zip": "19288", "city": "Ludwigslust", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 53.326413, "lng": 11.497888, "screensLandscape": 2, "screensPortrait": 1, "screensTotal": 3}, {"id": "Loc_3vbwVcS6pnT", "name": "EDEKA Prill, Ludwigslust, Techentiner Str.", "address": "Techentiner Str. 39, 19288 Ludwigslust, Germany", "zip": "19288", "city": "Ludwigslust", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 53.310381, "lng": 11.492963, "screensLandscape": 1, "screensPortrait": 1, "screensTotal": 2}, {"id": "Loc_gv72hdLjqJf", "name": "EDEKA Radtke, Crivitz", "address": "Gartenstraße 7, 19089 Demen, Germany", "zip": "19089", "city": "Demen", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 53.574836, "lng": 11.651011, "screensLandscape": 1, "screensPortrait": 1, "screensTotal": 2}, {"id": "Loc_L4mP7Qmmgqu", "name": "EDEKA Reimer, Rieseby", "address": "Hufeisenweg 14, 24354 Rieseby, Germany", "zip": "24354", "city": "Rieseby", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.542581, "lng": 9.809393, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_RcQ1VEAbKQ3", "name": "EDEKA Rickmers, Oldsum", "address": "Waaster Bobdikem 28, 25938 Dunsum, Germany", "zip": "25938", "city": "Dunsum", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.731616, "lng": 8.446359, "screensLandscape": 2, "screensPortrait": 2, "screensTotal": 4}, {"id": "Loc_WV9XHi3ziaT", "name": "EDEKA Ristow, Heikendorf", "address": "Tobringer 4, 24226 Heikendorf, Germany", "zip": "24226", "city": "Heikendorf", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.376586, "lng": 10.221967, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_UQzKsfuVpw9", "name": "EDEKA Ristow, Mönkeberg", "address": "Am Eksol 18, 24248 Mönkeberg, Germany", "zip": "24248", "city": "Mönkeberg", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.348803, "lng": 10.189087, "screensLandscape": 6, "screensPortrait": 0, "screensTotal": 6}, {"id": "Loc_2uYpGqwm9Yb", "name": "EDEKA Rüdiger, Silberstedt", "address": "Tükeslih 4, 24887 Silberstedt, Germany", "zip": "24887", "city": "Silberstedt", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.518128, "lng": 9.39031, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_NbRkx8RPSyD", "name": "EDEKA Saur, Glücksburg", "address": "EDEKA Glücksburg, Rathausstraße 8, 24960 Munkbrarup, Germany", "zip": "24960", "city": "Munkbrarup", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.835036, "lng": 9.548462, "screensLandscape": 4, "screensPortrait": 0, "screensTotal": 4}, {"id": "Loc_CvuMgzttcdu", "name": "EDEKA Scharfenberg, Schwerin", "address": "Bertolt-Brecht-Straße 30, 19059 Schwerin, Germany", "zip": "19059", "city": "Schwerin", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 53.634405, "lng": 11.393904, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_YfeJCR6ih3u", "name": "EDEKA Scheller, Bredenbek", "address": "Kieler Str. 2A, 24796 Bredenbek, Germany", "zip": "24796", "city": "Bredenbek", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.324722, "lng": 9.869444, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_7hTr8SjpWYF", "name": "EDEKA Schlüter, Hohn", "address": "Hauptstraße 29, 24806 Hohn, Germany", "zip": "24806", "city": "Hohn", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.331453, "lng": 9.551739, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_WoX5c4d1G2B", "name": "EDEKA Schmidt, Kyritz", "address": "Pritzwalker Str. 48, 16866 Gransee, Germany", "zip": "16866", "city": "Gransee", "region": "Brandenburg", "country": "DEU", "lat": 52.95387, "lng": 12.39699, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_aXKGPquxtK9", "name": "EDEKA Schmidt, Zinnowitz", "address": "Waldstraße 38, 17454 Zinnowitz, Germany", "zip": "17454", "city": "Zinnowitz", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.079006, "lng": 13.913644, "screensLandscape": 4, "screensPortrait": 0, "screensTotal": 4}, {"id": "Loc_4rMtpZf5KUT", "name": "EDEKA Schmoock, Rendsburg", "address": "dm-drogerie markt, Schleswiger Ch 41, 24768 Rendsburg, Germany", "zip": "24768", "city": "Rendsburg", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.312224, "lng": 9.64444, "screensLandscape": 5, "screensPortrait": 0, "screensTotal": 5}, {"id": "Loc_VTu5xmpvouh", "name": "EDEKA Schneider, Greifswald", "address": "Bahnhofstraße 44, 17489 Greifswald, Germany", "zip": "17489", "city": "Greifswald", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.091527, "lng": 13.37412, "screensLandscape": 3, "screensPortrait": 2, "screensTotal": 5}, {"id": "Loc_fUpCnw455jV", "name": "EDEKA Schreib, Bleckede", "address": "Nindorfer Moorweg 1a, 21354 Bleckede, Germany", "zip": "21354", "city": "Bleckede", "region": "Niedersachsen", "country": "DEU", "lat": 53.288619, "lng": 10.730548, "screensLandscape": 4, "screensPortrait": 0, "screensTotal": 4}, {"id": "Loc_CRKsSwbqsg3", "name": "EDEKA Schröder, Preetz", "address": "Kieler Str. 29, 24211 Preetz, Germany", "zip": "24211", "city": "Preetz", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.243125, "lng": 10.276587, "screensLandscape": 0, "screensPortrait": 4, "screensTotal": 4}, {"id": "Loc_FJZujkCj7Nf", "name": "EDEKA Siedelmann, Kühlungsborn", "address": "Hafenstraße 1, 18225 Kühlungsborn, Germany", "zip": "18225", "city": "Kühlungsborn", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.150557, "lng": 11.761388, "screensLandscape": 1, "screensPortrait": 1, "screensTotal": 2}, {"id": "Loc_86oWVnWhc8o", "name": "EDEKA Sorgenfrey, Hürup", "address": "Edeka Zander, Hauptstraße 2, 24975 Husby, Germany", "zip": "24975", "city": "Husby", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.754276, "lng": 9.528325, "screensLandscape": 2, "screensPortrait": 3, "screensTotal": 5}, {"id": "Loc_2TCyzd9ks6X", "name": "EDEKA Stöver, HH-Farmsen", "address": "Traberweg 1, 22159 Hamburg, Germany", "zip": "22159", "city": "Hamburg", "region": "Hamburg", "country": "DEU", "lat": 53.597473, "lng": 10.100635, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_GNtzUaN1NET", "name": "EDEKA Süllau, Bargteheide", "address": "Rathausstraße 20, 22941 Hammoor, Germany", "zip": "22941", "city": "Hammoor", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.729583, "lng": 10.266454, "screensLandscape": 0, "screensPortrait": 2, "screensTotal": 2}, {"id": "Loc_QvzpknymCzj", "name": "EDEKA Süllau, Mölln", "address": "Industriestraße 1, 23879 Mölln, Germany", "zip": "23879", "city": "Mölln", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.619734, "lng": 10.677338, "screensLandscape": 4, "screensPortrait": 2, "screensTotal": 6}, {"id": "Loc_3xrHvYGB1D", "name": "EDEKA Süllau, Mölln, Grambeker Weg", "address": "Grambeker Weg 45, 23879 Mölln, Germany", "zip": "23879", "city": "Mölln", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.618208, "lng": 10.678225, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_5oXxAj7Tu4b", "name": "EDEKA Süllau, Ratzeburg, Am Viehmarkt", "address": "Am Viehmarkt 10, 23909 Mechow, Germany", "zip": "23909", "city": "Mechow", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.693717, "lng": 10.787706, "screensLandscape": 4, "screensPortrait": 1, "screensTotal": 5}, {"id": "Loc_aagSs1LU8Ty", "name": "EDEKA Süllau, Ratzeburg, Herrenstr.", "address": "Herrenstraße 4, 23909 Mechow, Germany", "zip": "23909", "city": "Mechow", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.69917, "lng": 10.772966, "screensLandscape": 0, "screensPortrait": 2, "screensTotal": 2}, {"id": "Loc_6nYrcRmiqfD", "name": "EDEKA Süllau, Trittau", "address": "Kirchenstraße 31, 22946 Grande, Germany", "zip": "22946", "city": "Grande", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.61042, "lng": 10.40816, "screensLandscape": 1, "screensPortrait": 3, "screensTotal": 4}, {"id": "Loc_WbBQDsgmUVm", "name": "EDEKA Tareilus, Herrnburg", "address": "Am bhf 1, 23923 Lüdersdorf, Germany", "zip": "23923", "city": "Lüdersdorf", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 53.837955, "lng": 10.76224, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_XCaDnnCFUuD", "name": "EDEKA Teske, Schafflund", "address": "Hauptstraße 96, 24980 Schafflund, Germany", "zip": "24980", "city": "Schafflund", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.762367, "lng": 9.169578, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_aN2auR5wCzT", "name": "EDEKA Tiedemann, Hammah", "address": "Bahnhofstraße 56, 21714 Hammah, Germany", "zip": "21714", "city": "Hammah", "region": "Niedersachsen", "country": "DEU", "lat": 53.618294, "lng": 9.366428, "screensLandscape": 1, "screensPortrait": 1, "screensTotal": 2}, {"id": "Loc_FYZwgv4gBHZ", "name": "EDEKA Tiedemann, Oldendorf", "address": "Hauptstraße 15, 21726 Oldendorf, Germany", "zip": "21726", "city": "Oldendorf", "region": "Niedersachsen", "country": "DEU", "lat": 53.590063, "lng": 9.252351, "screensLandscape": 5, "screensPortrait": 0, "screensTotal": 5}, {"id": "Loc_XBxJ3C86Bkb", "name": "EDEKA Till, Nortorf", "address": "Niedernstraße 9b, 24589 Nortorf, Germany", "zip": "24589", "city": "Nortorf", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.170859, "lng": 9.852096, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_Fh5gTw17zDM", "name": "EDEKA Töpfer, Petersdorf", "address": "Alte Bahnhofstraße 21, 23769 Fehmarn, Germany", "zip": "23769", "city": "Fehmarn", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.478726, "lng": 11.071648, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_bmqGR5MMrb9", "name": "EDEKA Voigt, Bosau-Hutzfeld", "address": "Hauptstraße 2a, 23715 Bosau, Germany", "zip": "23715", "city": "Bosau", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.090636, "lng": 10.486796, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_bFKH1EzLwFM", "name": "EDEKA Wanzenberg, Rehna", "address": "Schweriner Str. 4, 19217 Rehna, Germany", "zip": "19217", "city": "Rehna", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 53.77886, "lng": 11.049173, "screensLandscape": 2, "screensPortrait": 0, "screensTotal": 2}, {"id": "Loc_Wn9czZppKwu", "name": "EDEKA Warncke, Neu Wulmstorf", "address": "Wulmstorfer Wiesen 2, 21629 Neu Wulmstorf, Germany", "zip": "21629", "city": "Neu Wulmstorf", "region": "Niedersachsen", "country": "DEU", "lat": 53.475578, "lng": 9.786858, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_aheHEBMrXMR", "name": "EDEKA Wessel, Bad Bevensen", "address": "Medinger Str. 26, 29549 Bad Bevensen, Germany", "zip": "29549", "city": "Bad Bevensen", "region": "Niedersachsen", "country": "DEU", "lat": 53.080466, "lng": 10.573011, "screensLandscape": 2, "screensPortrait": 2, "screensTotal": 4}, {"id": "Loc_BGMQrPJn6tP", "name": "EDEKA Witt, Hamburg", "address": "Carl-Petersen-Straße 80, 20535 Hamburg, Germany", "zip": "20535", "city": "Hamburg", "region": "Hamburg", "country": "DEU", "lat": 53.557723, "lng": 10.047585, "screensLandscape": 1, "screensPortrait": 2, "screensTotal": 3}, {"id": "Loc_XdKTA7YaXpB", "name": "EDEKA Wölm, HH", "address": "Kandinskyallee 21, 22115 Hamburg, Germany", "zip": "22115", "city": "Hamburg", "region": "Hamburg", "country": "DEU", "lat": 53.527357, "lng": 10.149902, "screensLandscape": 2, "screensPortrait": 2, "screensTotal": 4}, {"id": "Loc_bZyY42cPogs", "name": "EDEKA Ziegler, HH", "address": "Am Veringhof 8, 21107 Hamburg, Germany", "zip": "21107", "city": "Hamburg", "region": "Hamburg", "country": "DEU", "lat": 53.51328, "lng": 9.985968, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}, {"id": "Loc_KUvryhLoPRy", "name": "EDEKA Ziegler, HH", "address": "Veritaskai 8, 21079 Hamburg, Germany", "zip": "21079", "city": "Hamburg", "region": "Hamburg", "country": "DEU", "lat": 53.465379, "lng": 9.98897, "screensLandscape": 0, "screensPortrait": 2, "screensTotal": 2}, {"id": "Loc_HyteVCURWPH", "name": "EDEKA Zöllick, Rostock, Hermannstr.", "address": "Hermannstraße 30, 18055 Rostock, Germany", "zip": "18055", "city": "Rostock", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.083066, "lng": 12.135135, "screensLandscape": 1, "screensPortrait": 0, "screensTotal": 1}, {"id": "Loc_YqLKfFpUmZh", "name": "EDEKA Zöllick, Rostock, Tychsenstr.", "address": "Tychsenstraße 20, 18059 Rostock, Germany", "zip": "18059", "city": "Rostock", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 54.067762, "lng": 12.117953, "screensLandscape": 1, "screensPortrait": 1, "screensTotal": 2}, {"id": "Loc_EsDMhGtGJf9", "name": "Marktkauf-Center Holling, Cuxhaven", "address": "Abschnede 210, 27472 Cuxhaven, Germany", "zip": "27472", "city": "Cuxhaven", "region": "Niedersachsen", "country": "DEU", "lat": 53.844437, "lng": 8.692877, "screensLandscape": 4, "screensPortrait": 0, "screensTotal": 4}, {"id": "Loc_PkdntMKboHh", "name": "Marktkauf, Schleswig", "address": "Flensburger Str. 61, 24837 Schleswig, Germany", "zip": "24837", "city": "Schleswig", "region": "Schleswig-Holstein", "country": "DEU", "lat": 54.529564, "lng": 9.526932, "screensLandscape": 1, "screensPortrait": 5, "screensTotal": 6}, {"id": "Loc_FAVHhcMTon7", "name": "Marktkauf, Wismar", "address": "Zierower Landstraße 3 - 9, 23968 Wismar, Germany", "zip": "23968", "city": "Wismar", "region": "Mecklenburg-Vorpommern", "country": "DEU", "lat": 53.90315, "lng": 11.407467, "screensLandscape": 6, "screensPortrait": 0, "screensTotal": 6}, {"id": "Loc_7eKB3utcxCF", "name": "Neukauf Bad Segeberg, Bad Segeberg", "address": "Gieschenhagen 1A, 23795 Weede, Germany", "zip": "23795", "city": "Weede", "region": "Schleswig-Holstein", "country": "DEU", "lat": 53.93279, "lng": 10.31124, "screensLandscape": 3, "screensPortrait": 0, "screensTotal": 3}];
+
+        // Globale Variablen für den Zustand der Anwendung
+        let map;
+        let customerLocation = null;
+        let customerMarker = null;
+        let radiusCircle = null;
+        const storeMarkersLayer = L.layerGroup();
+        const storeMarkerObjects = {};
+
+        // Referenzen auf DOM-Elemente
+        const addressInput = document.getElementById('addressInput');
+        const searchButton = document.getElementById('searchButton');
+        const radiusSlider = document.getElementById('radiusSlider');
+        const radiusValue = document.getElementById('radiusValue');
+        const resultsList = document.getElementById('resultsList');
+        const resultsCount = document.getElementById('resultsCount');
+        const resultsItems = document.getElementById('resultsItems');
+        const noResultsMessage = document.getElementById('no-results-message');
+
+        /**
+         * Initialisiert die Leaflet-Karte beim Laden der Seite.
+         */
+        function initMap() {
+            // Fokus auf Norddeutschland (EDEKA Nord)
+            map = L.map('map').setView([53.5, 10.2], 7);
+
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                subdomains: 'abcd',
+                maxZoom: 19
+            }).addTo(map);
+
+            storeMarkersLayer.addTo(map);
+        }
+
+        /**
+         * Berechnet die Distanz zwischen zwei Geokoordinaten (Haversine).
+         * @returns {number} Distanz in Kilometern
+         */
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371;
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a =
+                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+        }
+
+        /**
+         * Geocoding via Nominatim (OpenStreetMap)
+         */
+        async function geocodeAddress(address) {
+            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&countrycodes=de&limit=1`;
+            try {
+                const response = await fetch(url, { headers: { 'User-Agent': 'EDEKA-Nord-Dashboard-App/1.0' } });
+                if (!response.ok) throw new Error('Netzwerk-Antwort war nicht ok.');
+
+                const data = await response.json();
+                if (data && data.length > 0) {
+                    return {
+                        lat: parseFloat(data[0].lat),
+                        lng: parseFloat(data[0].lon)
+                    };
+                }
+                return null;
+            } catch (error) {
+                console.error('Geocoding-Fehler:', error);
+                alert('Fehler beim Abrufen der Adresse. Bitte prüfen Sie die Eingabe und Ihre Internetverbindung.');
+                return null;
+            }
+        }
+
+        /**
+         * Hauptfunktion zur Aktualisierung (Filter, Liste, Karte)
+         */
+        function updateDashboard() {
+            if (!customerLocation) return;
+
+            const radius = parseInt(radiusSlider.value);
+
+            const foundStores = edekaStores
+                .map(store => {
+                    const distance = calculateDistance(customerLocation.lat, customerLocation.lng, store.lat, store.lng);
+                    return { ...store, distance };
+                })
+                .filter(store => store.distance <= radius)
+                .sort((a, b) => a.distance - b.distance);
+
+            updateResultsList(foundStores, radius);
+            updateMap(foundStores);
+        }
+
+        /**
+         * Ergebnisliste (Sidebar)
+         */
+        function updateResultsList(stores, radius) {
+            // Count anzeigen (auch bei 0 Treffern)
+            if (resultsCount) {
+                resultsCount.style.display = "block";
+                const label = (stores.length === 1) ? "Filiale" : "Filialen";
+                resultsCount.textContent = stores.length + " " + label + " im Radius (" + radius + " km)";
+            }
+
+            if (resultsItems) {
+                resultsItems.innerHTML = "";
+            }
+
+            if (stores.length === 0) {
+                if (noResultsMessage) {
+                    noResultsMessage.style.display = "block";
+                    noResultsMessage.textContent = "Keine EDEKA Nord Standorte in diesem Radius gefunden.";
+                }
+                return;
+            }
+
+            if (noResultsMessage) {
+                noResultsMessage.style.display = "none";
+            }
+
+            stores.forEach(store => {
+                const item = document.createElement("div");
+                item.className = "result-item";
+                item.setAttribute("data-store-id", store.id);
+
+                const distanceLabel = store.distance < 10 ? store.distance.toFixed(1) : store.distance.toFixed(0);
+
+                item.innerHTML = `
+                    <div class="title">${store.name}</div>
+                    <div class="address">${store.address}</div>
+                    <div class="meta">
+                        <div class="screens">Screens: ${store.screensTotal}</div>
+                        <div class="distance">${distanceLabel} km</div>
+                    </div>
+                `;
+
+                item.addEventListener("click", () => focusOnStore(store.id));
+                if (resultsItems) {
+                    resultsItems.appendChild(item);
+                }
+            });
+        }
+
+        /**
+         * Karte aktualisieren (Marker, Kreis, FitBounds)
+         */
+        function updateMap(stores) {
+            if (customerMarker) map.removeLayer(customerMarker);
+            if (radiusCircle) map.removeLayer(radiusCircle);
+
+            storeMarkersLayer.clearLayers();
+            Object.keys(storeMarkerObjects).forEach(key => delete storeMarkerObjects[key]);
+
+            // Kunden-Marker (blau)
+            const customerIcon = L.divIcon({
+                html: `<div style="background-color: var(--edeka-blue); width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.5);"></div>`,
+                className: '', iconSize: [26, 26], iconAnchor: [13, 13]
+            });
+
+            customerMarker = L.marker([customerLocation.lat, customerLocation.lng], { icon: customerIcon })
+                .addTo(map)
+                .bindPopup('Kundenstandort');
+
+            // Radius-Kreis
+            const radiusInMeters = parseInt(radiusSlider.value) * 1000;
+            radiusCircle = L.circle([customerLocation.lat, customerLocation.lng], {
+                radius: radiusInMeters,
+                color: 'var(--edeka-blue)',
+                fillColor: 'var(--edeka-yellow)',
+                fillOpacity: 0.12
+            }).addTo(map);
+
+            // Store-Marker (gelb)
+            const storeIcon = L.divIcon({
+                html: `<div style="background-color: var(--edeka-yellow); width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.5);"></div>`,
+                className: '', iconSize: [26, 26], iconAnchor: [13, 13]
+            });
+
+            stores.forEach(store => {
+                const distanceLabel = store.distance < 10 ? store.distance.toFixed(1) : store.distance.toFixed(0);
+                const marker = L.marker([store.lat, store.lng], { icon: storeIcon });
+
+                marker.bindPopup(
+                    `<b>${store.name}</b><br>` +
+                    `${store.address}<br>` +
+                    `Screens: ${store.screensLandscape} L / ${store.screensPortrait} P (Total: ${store.screensTotal})<br>` +
+                    `Entfernung: ${distanceLabel} km`
+                );
+
+                storeMarkersLayer.addLayer(marker);
+                storeMarkerObjects[store.id] = marker;
+            });
+
+            map.fitBounds(radiusCircle.getBounds(), { padding: [50, 50] });
+        }
+
+        /**
+         * Fokus auf Store
+         */
+        function focusOnStore(storeId) {
+            const marker = storeMarkerObjects[storeId];
+            if (marker) {
+                map.setView(marker.getLatLng(), 14);
+                marker.openPopup();
+            }
+        }
+
+        /**
+         * Suche (Adresse → geocode → update)
+         */
+        async function handleSearch() {
+            const address = addressInput.value.trim();
+            if (!address) {
+                alert('Bitte geben Sie eine Adresse ein.');
+                return;
+            }
+
+            searchButton.disabled = true;
+            searchButton.textContent = '...';
+
+            const location = await geocodeAddress(address);
+
+            if (location) {
+                customerLocation = location;
+                radiusSlider.value = 40;
+                radiusValue.textContent = '40 km';
+                updateDashboard();
+            }
+
+            searchButton.disabled = false;
+            searchButton.textContent = 'Suchen';
+        }
+
+        // Init
+        document.addEventListener('DOMContentLoaded', () => {
+            initMap();
+
+            searchButton.addEventListener('click', handleSearch);
+            addressInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') handleSearch();
+            });
+
+            radiusSlider.addEventListener('input', () => {
+                radiusValue.textContent = `${radiusSlider.value} km`;
+                if (customerLocation) updateDashboard();
+            });
+        });
+
+    </script>
+</body>
+</html>
